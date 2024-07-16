@@ -1,86 +1,151 @@
+import 'dart:html';
 import 'package:flutter/material.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
-void main() => runApp(const MyApp());
+void main() {
+  runApp(MyApp());
+}
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
-    const title = 'WebSocket Demo';
-    return const MaterialApp(
-      title: title,
-      home: MyHomePage(
-        title: title,
+    return MaterialApp(
+      title: 'WebSocket Chat',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
       ),
+      home: MyChatPage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({
-    super.key,
-    required this.title,
-  });
-
-  final String title;
-
+class MyChatPage extends StatefulWidget {
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  _MyChatPageState createState() => _MyChatPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyChatPageState extends State<MyChatPage> {
   final TextEditingController _controller = TextEditingController();
-  final _channel = WebSocketChannel.connect(
-    Uri.parse('ws://localhost:8080/ws'),
-  );
+  late WebSocket _webSocket;
+  bool _isConnected = false;
+  bool _isTyping = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _connectToWebSocket();
+  }
+
+  void _connectToWebSocket() {
+    _webSocket = WebSocket('ws://echo.websocket.org');
+    _webSocket.onOpen.listen((event) {
+      setState(() {
+        _isConnected = true;
+      });
+    });
+
+    _webSocket.onMessage.listen((event) {
+      final message = event.data as String;
+      _handleMessage(message);
+    });
+
+    _webSocket.onClose.listen((event) {
+      setState(() {
+        _isConnected = false;
+      });
+    });
+  }
+
+  void _handleMessage(String message) {
+    if (message == 'is typing...') {
+      setState(() {
+        _isTyping = true;
+      });
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() {
+            _isTyping = false;
+          });
+        }
+      });
+    } else {
+      // Handle regular messages here
+    }
+  }
+
+  void _sendMessage() {
+    if (_controller.text.isNotEmpty) {
+      _webSocket.send(_controller.text);
+      _controller.clear();
+      setState(() {
+        _isTyping = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title),
+        title: Text('WebSocket Chat'),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Form(
-              child: TextFormField(
-                controller: _controller,
-                decoration: const InputDecoration(labelText: 'Send a message'),
-              ),
-            ),
-            const SizedBox(height: 24),
-            StreamBuilder(
-              stream: _channel.stream,
-              builder: (context, snapshot) {
-                return Text(snapshot.hasData ? '${snapshot.data}' : '');
-              },
-            )
-          ],
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+
+                Expanded(
+                  child: Column(
+                    children: <Widget>[
+                      Expanded(
+                        child: ListView(
+                          children: <Widget>[
+                            ListTile(
+                              title: Text('Welcome to WebSocket Chat'),
+                            ),
+                            // Add message list widgets here
+                          ],
+                        ),
+                      ),
+                      if (_isTyping)
+                        Text(
+                          'Someone is typing...',
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: TextField(
+                              controller: _controller,
+                              onChanged: (value) {
+                                if (value.isNotEmpty) {
+                                  _webSocket.send('is typing...');
+                                }
+                              },
+                              decoration: InputDecoration(
+                                hintText: 'Type a message...',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 10.0),
+                          ElevatedButton(
+                            onPressed: _sendMessage,
+                            child: Text('Send'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _sendMessage,
-        tooltip: 'Send message',
-        child: const Icon(Icons.send),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
-  }
-
-  void _sendMessage() {
-    if (_controller.text.isNotEmpty) {
-      _channel.sink.add(_controller.text);
-    }
-  }
-
-  @override
-  void dispose() {
-    _channel.sink.close();
-    _controller.dispose();
-    super.dispose();
   }
 }
